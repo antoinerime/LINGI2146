@@ -1,12 +1,15 @@
+#define UINT8_MAX_VALUE 255
+#define SIZE_ARRAY_CHILDREN 10
+
 enum types {
   ADVERTISEMENT = 1,
   REQUEST = 2,
   DATA = 3
 };
 
-typedef struct broadcast_message {
+typedef struct message {
   uint8_t type;
-} broadcast_message_t;
+} message_t;
 
 typedef struct advertisement {
   uint8_t type;
@@ -19,10 +22,16 @@ typedef struct request_parent {
 
 typedef struct data {
   uint8_t type;
-  void *data;
+  linkaddr_t sensor_addr;
+  int metric;
 } data_t;
 
 typedef struct parent {
   linkaddr_t addr;
   int16_t rssi;
+  uint8_t id;
 } parent_t;
+
+typedef struct child {
+  linkaddr_t addr;
+} child_t;
