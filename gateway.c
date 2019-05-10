@@ -12,37 +12,12 @@
 #include "sensor.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
 
 #define BROADCAST_CHANNEL 129
 #define RUNICAST_CHANNEL 144
-
-/*---------------------------------------------------------------------------*/
-//static linkaddr_t parent_addr;
-/* Init parent address */
-//parent_addr.u8[0] = 0;
-//parent_addr.u8[1] = 0;
-
-static parent_t *parent = NULL;
-/*---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------*/
-static void send_request_parent(const linkaddr_t *new_parent_addr) {
-  parent->addr.u8[0] = 0;
-  parent->addr.u8[1] = 0;
-  request_parent_t req;
-  req.type = REQUEST;
-  packetbuf_copyfrom(&req, sizeof(request_parent_t));
-  while(runicast_is_transmitting(&runicast)) {}
-  runicast_send(&runicast, new_parent_addr, MAX_RETRANSMISSIONS);
-}
-
-/*---------------------------------------------------------------------------*/
-
-
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network, "sensor network");
@@ -57,12 +32,8 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 static void
 sent_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
 {
-  if(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0) { // We have a new parent
-    parent->addr.u8[0] = to->u8[0];
-    parent->addr.u8[1] = to->u8[1];
-    printf("NEW PARENT \n");
-  }
-  printf("runicast message sent to %d.%d. Parent : %d.%d.\n", to->u8[0], to->u8[1], parent->addr.u8[0], parent->addr.u8[1]);
+  printf("runicast message sent to %d.%d, retransmissions %d\n",
+	 to->u8[0], to->u8[1], retransmissions);
 }
 static void
 timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retransmissions)
@@ -78,34 +49,14 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 static void
 broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 {
-  broadcast_message_t *message = ((broadcast_message_t *) packetbuf_dataptr());
-  switch((int) message->type) {
-    case ADVERTISEMENT:
-      if(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0)
-        send_request_parent(from);
-      break;
-    case REQUEST:
-      break;
-    case DATA:
-      break;
-    default:
-      printf("broadcast_recv: Type not known \n");
-  }
-  printf("broadcast message received from %d.%d: 'type = %d'\n",
-         from->u8[0], from->u8[1], (int) message->type);
+  printf("broadcast message received from %d.%d: '%s'\n",
+         from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
 }
 static const struct broadcast_callbacks broadcast_callbacks = {broadcast_recv};
 static struct broadcast_conn broadcast;
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(sensor_network, ev, data)
 {
-  if(parent == NULL) {
-    parent = malloc(sizeof(parent_t));
-    parent->addr.u8[0] = 0;
-    parent->addr.u8[1] = 0;
-    parent->rssi = 0;
-  }
-
   static struct etimer et;
 
   PROCESS_EXITHANDLER(broadcast_close(&broadcast));
@@ -118,12 +69,18 @@ PROCESS_THREAD(sensor_network, ev, data)
 
   while(1)
   {
-    etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
+    etimer_set(&et, CLOCK_SECOND * 1 + random_rand() % (CLOCK_SECOND * 4));
 
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
-    //broadcast_send(&broadcast);
-    //printf("broadcast message sent\n");
+    advertisement_t adv;
+    adv.type = ADVERTISEMENT;
+    adv.id = 0;
+    packetbuf_clear();
+    packetbuf_copyfrom(&adv, sizeof(advertisement_t));
+    //printf("type : %d \n", ((int) ((advertisement_t *) packetbuf_dataptr())->type));
+    broadcast_send(&broadcast);
+    printf("broadcast message sent\n");
   }
 
   PROCESS_END();

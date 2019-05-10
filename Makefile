@@ -1,4 +1,4 @@
-CONTIKI = ../contiki-3.0
+CONTIKI = ../contiki
 
 all: sensor
 
