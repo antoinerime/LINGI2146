@@ -6,107 +6,16 @@
 
 #include "dev/leds.h"
 
-#include "messages.h"
+#include "utils.h"
 #include "mmem.h"
 #include "linkaddr.h"
-#include "sensor.h"
+//#include "sensor.h"
 #include "etimer.h"
-
-#include <stdio.h>
-#include <stdlib.h>
-
-#define MAX_RETRANSMISSIONS 4
-#define NUM_HISTORY_ENTRIES 4
-
-#define BROADCAST_CHANNEL 129
-#define RUNICAST_CHANNEL 144
 
 /*---------------------------------------------------------------------------*/
 static parent_t *parent = NULL;
 static child_t **child_array = NULL;
 /*---------------------------------------------------------------------------*/
-
-/*---------------------------------------------------------------------------*/
-
-static void send_request_parent(const linkaddr_t *new_parent_addr, uint8_t id) {
-  parent->id = id;
-  parent->addr.u8[0] = 0;
-  parent->addr.u8[1] = 0;
-  request_parent_t req;
-  req.type = REQUEST;
-  //while(runicast_is_transmitting(&runicast)) {}
-  packetbuf_clear();
-  packetbuf_copyfrom(&req, sizeof(request_parent_t));
-  runicast_send(&runicast, new_parent_addr, MAX_RETRANSMISSIONS);
-  packetbuf_clear();
-}
-
-static void send_broadcast_parent_dead() {
-  printf("My parent is dead -> I send broadcast parent dead \n");
-  parent_dead_t parent_dead;
-  parent_dead.type = PARENT_DEAD;
-  packetbuf_clear();
-  packetbuf_copyfrom(&parent_dead, sizeof(data_t));
-  broadcast_send(&broadcast);
-  int i = 0;
-  for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
-    child_array[i] = NULL;
-  }
-}
-
-static void check_child_timeout() {
-  unsigned long timer;
-  timer = clock_seconds();
-  int i = 0;
-  for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
-    if(child_array[i] != NULL) {
-      if(timer - child_array[i]->last_seen > TIMEOUT_CHILD) {
-        printf("Remove child : %d.%d \n", child_array[i]->addr.u8[0], child_array[i]->addr.u8[1]);
-        free(child_array[i]);
-        child_array[i] = NULL;
-      }
-    }
-  }
-}
-
-static child_t *in_list_of_children(const linkaddr_t *addr) {
-  int i = 0;
-  for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
-    if(child_array[i] != NULL && linkaddr_cmp(addr, &child_array[i]->addr)) {
-      return child_array[i];
-    }
-  }
-  return NULL;
-}
-
-static void add_child_to_list(const linkaddr_t *addr) {
-  if(in_list_of_children(addr) == NULL) {
-    child_t *new_child = malloc(sizeof(child_t));
-    new_child->addr.u8[0] = addr->u8[0]; // TODO: use linkaddr_set
-    new_child->addr.u8[1] = addr->u8[1];
-    new_child->last_seen = clock_seconds();
-    int i = 0;
-    for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
-      if(child_array[i] == NULL) {
-        child_array[i] = new_child;
-        break;
-      }
-    }
-  }
-}
-
-static void print_child_list(void) {
-  printf("My list of childs : \n");
-  int i = 0;
-  for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
-    if(child_array[i] != NULL) {
-      printf("Addr child : %d.%d \n", child_array[i]->addr.u8[0], child_array[i]->addr.u8[1]);
-    }
-  }
-}
-
-/*---------------------------------------------------------------------------*/
-
 
 
 /*---------------------------------------------------------------------------*/
@@ -116,13 +25,13 @@ AUTOSTART_PROCESSES(&sensor_network);
 static void
 recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
 {
-  child_t *child = in_list_of_children(from);
+  child_t *child = in_list_of_children(child_array, from);
   if(child != NULL) {
     child->last_seen = clock_seconds();
   }
   else {
     if(parent != NULL) {
-      add_child_to_list(from);
+      add_child_to_list(child_array, from);
     }
   }
   message_t *message = ((message_t *) packetbuf_dataptr());
@@ -130,7 +39,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     case ADVERTISEMENT:
       break;
     case REQUEST:
-      add_child_to_list(from); // In fact it is useless (if we use a channel for control plane then useful)
+      add_child_to_list(child_array, from); // In fact it is useless (if we use a channel for control plane then useful)
       break;
     case DATA:
       ;
@@ -163,7 +72,7 @@ timedout_runicast(struct runicast_conn *c, const linkaddr_t *to, uint8_t retrans
 {
   if(linkaddr_cmp(to, &parent->addr)) {
       parent = NULL; // parent is dead
-      send_broadcast_parent_dead();
+      send_broadcast_parent_dead(child_array);
   }
   printf("runicast message timed out when sending to %d.%d, retransmissions %d\n", to->u8[0], to->u8[1], retransmissions);
 }
@@ -175,7 +84,7 @@ static const struct runicast_callbacks runicast_callbacks = {recv_runicast,
 static void
 broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
 {
-  child_t *child = in_list_of_children(from);
+  child_t *child = in_list_of_children(child_array, from);
   if(child != NULL) {
     child->last_seen = clock_seconds();
   }
@@ -184,10 +93,10 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     case ADVERTISEMENT:
       ;
       advertisement_t *adv_message = (advertisement_t *) message;
-      if(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0)
-        send_request_parent(from, adv_message->id);
-      else if(adv_message->id < parent->id) // TODO: Add condition on signal strength
-        send_request_parent(from, adv_message->id);
+      if(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0) // Don't have any parent
+        send_request_parent(parent, from, adv_message->id);
+      else if(adv_message->id < parent->id) // better number of hops
+        send_request_parent(parent, from, adv_message->id);
       break;
     case REQUEST:
       break;
@@ -196,7 +105,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
     case PARENT_DEAD:
       if(linkaddr_cmp(from, &parent->addr)) {
         parent = NULL;
-        send_broadcast_parent_dead();
+        send_broadcast_parent_dead(child_array);
       }
       break;
     default:
@@ -237,7 +146,7 @@ PROCESS_THREAD(sensor_network, ev, data)
   clock_init();
   while(1)
   {
-    check_child_timeout();
+    check_child_timeout(child_array);
     etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
     if(!(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0)) {
