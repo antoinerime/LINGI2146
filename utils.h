@@ -175,6 +175,7 @@ static void add_packet_to_buf(data_buf_t *data_buf, data_t *data_packet, linkadd
   packetbuf_clear();
 }
 
+// TODO: Need to fix the aggregation of packets with timeout. Working with buffer full
 static void check_buffer_timeout(data_buf_t *data_buf, linkaddr_t *to) {
   unsigned long timer;
   timer = clock_seconds();
