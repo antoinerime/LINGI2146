@@ -8,6 +8,8 @@
 #define SIZE_ARRAY_CHILDREN 10
 #define BROADCAST_INTERVAL 4
 #define TIMEOUT_CHILD BROADCAST_INTERVAL*4
+#define TIMEOUT_BUFFER 20
+#define SIZE_BUF 5
 
 #define MAX_RETRANSMISSIONS 4
 #define NUM_HISTORY_ENTRIES 4
@@ -78,6 +80,13 @@ typedef struct child {
   unsigned long last_seen;
 } child_t;
 
+/* Buffer data structure */
+
+typedef struct data_buf {
+  data_t *buf[SIZE_BUF];
+  unsigned long timer;
+} data_buf_t;
+
 
 /* Utils functions */
 static void send_option_to_children(uint8_t option, child_t **child_array) {
@@ -133,6 +142,57 @@ static void check_child_timeout(child_t **child_array) {
         child_array[i] = NULL;
       }
     }
+  }
+}
+
+static void add_packet_to_buf(data_buf_t *data_buf, data_t *data_packet, linkaddr_t *to) {
+  int i;
+  for(i = 0; i < SIZE_BUF; i++) {
+    if(data_buf->buf[i] == NULL) {
+      printf("buf[%d] filled\n", i);
+      data_buf->buf[i] = data_packet;
+      data_buf->timer = clock_seconds();
+      break;
+    }
+  }
+  if(i == SIZE_BUF-1) {
+    packetbuf_clear();
+    char buf[SIZE_BUF * sizeof(data_t)];
+    for(i = 0; i < SIZE_BUF; i++) {
+      if(data_buf->buf[i] != NULL) {
+        memcpy(buf + i * sizeof(data_t), data_buf->buf[i], sizeof(data_t));
+      }
+    }
+    int size = packetbuf_copyfrom(buf, sizeof(data_t) * SIZE_BUF);
+    printf("Send buffer because full: size = %d \n", size);
+    runicast_send(&runicast, to, MAX_RETRANSMISSIONS);
+    for(i = 0; i < SIZE_BUF; i++) {
+      free(data_buf->buf[i]);
+      data_buf->buf[i] = NULL;
+    }
+    data_buf->timer = clock_seconds();
+  }
+  packetbuf_clear();
+}
+
+static void check_buffer_timeout(data_buf_t *data_buf, linkaddr_t *to) {
+  unsigned long timer;
+  timer = clock_seconds();
+  if(timer - data_buf->timer > TIMEOUT_BUFFER) {
+    int i;
+    packetbuf_clear();
+    for(i = 0; i < SIZE_BUF; i++) {
+      if(data_buf->buf[i] != NULL) {
+        packetbuf_copyfrom(data_buf->buf[i], sizeof(data_t));
+      }
+    }
+    printf("Send buffer because timeout \n");
+    runicast_send(&runicast, to, MAX_RETRANSMISSIONS);
+    for(i = 0; i < SIZE_BUF; i++) {
+      free(data_buf->buf[i]);
+      data_buf->buf[i] = NULL;
+    }
+    data_buf->timer = clock_seconds();
   }
 }
 

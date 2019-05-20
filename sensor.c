@@ -15,6 +15,7 @@
 static parent_t *parent = NULL;
 static child_t **child_array = NULL;
 static uint8_t option = SEND_PERIODIC;
+static data_buf_t *data_buf;
 /*---------------------------------------------------------------------------*/
 
 
@@ -48,11 +49,17 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
       break;
     case DATA:
       ;
-      data_t *data_packet = (data_t *) message;
+      uint16_t nbr_data_packets = packetbuf_datalen() / sizeof(data_t);
+      printf("DATA received, nbr packets = %d\n", (int) nbr_data_packets);
+      int i;
+      for(i = 0; i < nbr_data_packets; i++) {
+        add_packet_to_buf(data_buf, ((data_t *) message) + i, &parent->addr);
+      }
+      /*data_t *data_packet = (data_t *) message;
       packetbuf_clear();
       packetbuf_copyfrom(data_packet, sizeof(data_t));
       runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
-      packetbuf_clear();
+      packetbuf_clear();*/
       //printf("forward data (from: %d.%d)\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1]);
       break;
     case OPTION:
@@ -153,6 +160,15 @@ PROCESS_THREAD(sensor_network, ev, data)
     }
   }
 
+  if(data_buf == NULL) {
+    data_buf = malloc(sizeof(data_buf_t));
+    int i;
+    for(i = 0; i < SIZE_BUF; i ++) {
+      data_buf->buf[i] = NULL;
+    }
+    data_buf->timer = 0;
+  }
+
   static struct etimer et;
 
   PROCESS_EXITHANDLER(broadcast_close(&broadcast));
@@ -165,10 +181,12 @@ PROCESS_THREAD(sensor_network, ev, data)
   clock_init();
   while(1)
   {
-    check_child_timeout(child_array);
     etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
     if(!(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0)) { // If sensor has a parent, it advertises that it can becomes parent of other sensors
+      check_buffer_timeout(data_buf, &parent->addr); // check if the buffer timed out
+      check_child_timeout(child_array); // Check if our children are still alive
+
       advertisement_t adv;
       adv.type = ADVERTISEMENT;
       adv.id = (parent->id)+1;
@@ -180,16 +198,18 @@ PROCESS_THREAD(sensor_network, ev, data)
       /* Send data */
       switch (option) {
         case SEND_PERIODIC:
+          ;
           data_t data;
           data.type = DATA;
           data.sensor_addr = linkaddr_node_addr;
           data.topic = TEMPERATURE;
           data.metric = 42;
-          packetbuf_clear();
+          /*packetbuf_clear();
           packetbuf_copyfrom(&data, sizeof(data_t));
           runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
-          packetbuf_clear();
-          printf("Send data \n");
+          packetbuf_clear();*/
+          //printf("Send data \n");
+          add_packet_to_buf(data_buf, &data, &parent->addr);
           break;
         case SEND_IF_CHANGE:
           // Handle change case

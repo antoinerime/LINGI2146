@@ -42,8 +42,16 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
       break;
     case DATA:
       ;
-      data_t *data_packet = (data_t *) message;
-      printf("DATA: %d.%d, %d, %d\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1], data_packet->topic, data_packet->metric); // Sends data to gateway
+      uint16_t nbr_data_packets = packetbuf_datalen() / sizeof(data_t);
+      printf("DATA received, nbr packets = %d\n", (int) nbr_data_packets);
+      int i;
+      for(i = 0; i < nbr_data_packets; i++) {
+        printf("data + i = %p\n", ((data_t *) message) + i);
+        data_t *data_packet = ((data_t *) message) + i;
+        printf("DATA: %d.%d, %d, %d\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1], data_packet->topic, data_packet->metric);
+      }
+      /*data_t *data_packet = (data_t *) message;
+      printf("DATA: %d.%d, %d, %d\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1], data_packet->topic, data_packet->metric); // Sends data to gateway*/
       break;
     default:
       printf("unicast_recv: Type not known \n");
