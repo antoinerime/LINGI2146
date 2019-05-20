@@ -82,7 +82,6 @@ PROCESS_THREAD(sensor_network, ev, data)
     int i = 0;
     for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
       child_array[i] = NULL;
-      if(child_array[i] != NULL) printf("WHAAAT\n");
     }
   }
 
@@ -104,12 +103,12 @@ PROCESS_THREAD(sensor_network, ev, data)
 
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
+    /* Advertises that it can be parent of other sensors */
     advertisement_t adv;
     adv.type = ADVERTISEMENT;
     adv.id = 0;
     packetbuf_clear();
     packetbuf_copyfrom(&adv, sizeof(advertisement_t));
-    //printf("type : %d \n", ((int) ((advertisement_t *) packetbuf_dataptr())->type));
     broadcast_send(&broadcast);
     printf("Broadcast message sent : I can be your parent !\n");
   }

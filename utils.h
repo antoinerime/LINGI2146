@@ -19,6 +19,10 @@
 #define TEMPERATURE 1
 #define HUMIDITY 2
 
+/* Options definition */
+#define SEND_PERIODIC 1
+#define SEND_IF_CHANGE 2
+
 static struct runicast_conn runicast;
 static struct broadcast_conn broadcast;
 
@@ -26,7 +30,8 @@ enum types {
   ADVERTISEMENT = 1,
   REQUEST = 2,
   DATA = 3,
-  PARENT_DEAD = 4
+  PARENT_DEAD = 4,
+  OPTION = 5
 };
 
 /* Messages data strcutures */
@@ -54,6 +59,11 @@ typedef struct data {
 typedef struct parent_dead {
   uint8_t type;
 } parent_dead_t;
+
+typedef struct option {
+  uint8_t type;
+  uint8_t option;
+} option_t;
 
 /* Nodes data strcutures */
 
