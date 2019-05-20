@@ -14,6 +14,7 @@
 /*---------------------------------------------------------------------------*/
 static parent_t *parent = NULL;
 static child_t **child_array = NULL;
+static uint8_t option = 0;
 /*---------------------------------------------------------------------------*/
 
 
@@ -46,12 +47,33 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     case DATA:
       ;
       data_t *data_packet = (data_t *) message;
-      //while(runicast_is_transmitting(&runicast)) {}
       packetbuf_clear();
       packetbuf_copyfrom(data_packet, sizeof(data_t));
       runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
       packetbuf_clear();
       //printf("forward data (from: %d.%d)\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1]);
+      break;
+    case OPTION:
+      ;
+      option_t *option_packet = (option_t *) message;
+      switch((int) option_packet->option) {
+        case SEND_PERIODIC:
+          option = SEND_PERIODIC;
+          break;
+        case SEND_IF_CHANGE:
+          option = SEND_IF_CHANGE;
+          break;
+      }
+      /* Flood option packet to all children */
+      int i = 0;
+      for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
+        if(child_array[i] != NULL) {
+          packetbuf_clear();
+          packetbuf_copyfrom(option_packet, sizeof(option_t));
+          runicast_send(&runicast, &child_array[i]->addr, MAX_RETRANSMISSIONS);
+          packetbuf_clear();
+        }
+      }
       break;
     default:
       printf("unicast_recv: Type not known \n");
@@ -151,7 +173,7 @@ PROCESS_THREAD(sensor_network, ev, data)
     check_child_timeout(child_array);
     etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-    if(!(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0)) {
+    if(!(parent->addr.u8[0] == 0 && parent->addr.u8[1] == 0)) { // If sensor has a parent, it advertises that it can becomes parent of other sensors
       advertisement_t adv;
       adv.type = ADVERTISEMENT;
       adv.id = (parent->id)+1;
@@ -160,13 +182,12 @@ PROCESS_THREAD(sensor_network, ev, data)
       broadcast_send(&broadcast);
       //printf("Broadcast message sent: I can be your parent! \n");
 
+      /* Send data */
       data_t data;
       data.type = DATA;
       data.sensor_addr = linkaddr_node_addr;
       data.topic = TEMPERATURE;
       data.metric = 42;
-
-      //while(runicast_is_transmitting(&runicast)) {}
       packetbuf_clear();
       packetbuf_copyfrom(&data, sizeof(data_t));
       runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
