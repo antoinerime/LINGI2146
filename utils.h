@@ -80,6 +80,22 @@ typedef struct child {
 
 
 /* Utils functions */
+static void send_option_to_children(uint8_t option, child_t **child_array) {
+  option_t option_packet;
+  option_packet.type = OPTION;
+  option_packet.option = option;
+  /* Flood option packet to all children */
+  int i = 0;
+  for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
+    if(child_array[i] != NULL) {
+      packetbuf_clear();
+      packetbuf_copyfrom(&option_packet, sizeof(option_t));
+      runicast_send(&runicast, &child_array[i]->addr, MAX_RETRANSMISSIONS);
+      packetbuf_clear();
+    }
+  }
+}
+
 static void send_request_parent(parent_t *parent, const linkaddr_t *new_parent_addr, uint8_t id) {
   parent->id = id;
   parent->addr.u8[0] = 0;

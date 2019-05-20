@@ -14,7 +14,7 @@
 /*---------------------------------------------------------------------------*/
 static parent_t *parent = NULL;
 static child_t **child_array = NULL;
-static uint8_t option = 0;
+static uint8_t option = SEND_PERIODIC;
 /*---------------------------------------------------------------------------*/
 
 
@@ -31,7 +31,9 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
   }
   else {
     if(parent != NULL) {
-      add_child_to_list(child_array, from);
+      if(!linkaddr_cmp(&parent->addr, from)) {
+        add_child_to_list(child_array, from);
+      }
     }
     else {
       send_broadcast_parent_dead(child_array); // node doesn't have a parent -> broadcast it
@@ -64,16 +66,9 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
           option = SEND_IF_CHANGE;
           break;
       }
+      printf("New option : %d \n", (int) option);
       /* Flood option packet to all children */
-      int i = 0;
-      for(i = 0; i < SIZE_ARRAY_CHILDREN; i++) {
-        if(child_array[i] != NULL) {
-          packetbuf_clear();
-          packetbuf_copyfrom(option_packet, sizeof(option_t));
-          runicast_send(&runicast, &child_array[i]->addr, MAX_RETRANSMISSIONS);
-          packetbuf_clear();
-        }
-      }
+      send_option_to_children(option, child_array);
       break;
     default:
       printf("unicast_recv: Type not known \n");
@@ -183,16 +178,26 @@ PROCESS_THREAD(sensor_network, ev, data)
       //printf("Broadcast message sent: I can be your parent! \n");
 
       /* Send data */
-      data_t data;
-      data.type = DATA;
-      data.sensor_addr = linkaddr_node_addr;
-      data.topic = TEMPERATURE;
-      data.metric = 42;
-      packetbuf_clear();
-      packetbuf_copyfrom(&data, sizeof(data_t));
-      runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
-      packetbuf_clear();
-      printf("Send data \n");
+      switch (option) {
+        case SEND_PERIODIC:
+          data_t data;
+          data.type = DATA;
+          data.sensor_addr = linkaddr_node_addr;
+          data.topic = TEMPERATURE;
+          data.metric = 42;
+          packetbuf_clear();
+          packetbuf_copyfrom(&data, sizeof(data_t));
+          runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
+          packetbuf_clear();
+          printf("Send data \n");
+          break;
+        case SEND_IF_CHANGE:
+          // Handle change case
+          break;
+      }
+
+
+      print_child_list(child_array);
     }
 
 

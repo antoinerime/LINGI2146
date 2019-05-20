@@ -9,6 +9,8 @@
 #include "utils.h"
 #include "mmem.h"
 #include "linkaddr.h"
+#include "dev/serial-line.h"
+
 
 /*---------------------------------------------------------------------------*/
 static child_t **child_array = NULL;
@@ -17,7 +19,9 @@ static child_t **child_array = NULL;
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network, "sensor network");
-AUTOSTART_PROCESSES(&sensor_network);
+//AUTOSTART_PROCESSES(&sensor_network);
+PROCESS(serial, "Serial line process");
+AUTOSTART_PROCESSES(&serial, &sensor_network);
 /*---------------------------------------------------------------------------*/
 static void
 recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
@@ -96,11 +100,11 @@ PROCESS_THREAD(sensor_network, ev, data)
   runicast_open(&runicast, RUNICAST_CHANNEL, &runicast_callbacks);
 
   clock_init();
+  serial_line_init();
   while(1)
   {
     check_child_timeout(child_array);
     etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
-
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
     /* Advertises that it can be parent of other sensors */
@@ -110,8 +114,30 @@ PROCESS_THREAD(sensor_network, ev, data)
     packetbuf_clear();
     packetbuf_copyfrom(&adv, sizeof(advertisement_t));
     broadcast_send(&broadcast);
-    printf("Broadcast message sent : I can be your parent !\n");
+    //printf("Broadcast message sent : I can be your parent !\n");
   }
 
+  PROCESS_END();
+}
+
+PROCESS_THREAD(serial, ev, data)
+{
+  /* Read socket if CLI gateway sent commands */
+  PROCESS_BEGIN();
+
+  for(;;) {
+    PROCESS_YIELD();
+    if(ev == serial_line_event_message) {
+      if(strcmp((char *) data, "periodical_data") == 0) {
+        printf("rcv option periodical \n");
+        send_option_to_children(SEND_PERIODIC, child_array);
+      }
+      else if(strcmp((char *) data, "on_change_data") == 0) {
+        printf("rcv option on change \n");
+        send_option_to_children(SEND_IF_CHANGE, child_array);
+      }
+      printf("received line: %s\n", (char *)data);
+    }
+  }
   PROCESS_END();
 }

@@ -8,7 +8,7 @@ import sys
 from threading import Thread, Lock
 
 HOST = '127.0.0.1'
-PORT = 60002
+PORT = 60003
 
 map_topics = {
     "1" : "/temperature/sensor",
@@ -34,7 +34,7 @@ def handle_cmd(s, cmd):
     elif cmd == "":
         pass
     else:
-        print("Command {} not known\n Try help for the list of commands", CMD)
+        print("Command {} not known\n Try help for the list of commands".format(cmd))
 
 def cli(socket):
     while True:
