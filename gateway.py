@@ -4,11 +4,13 @@ import socket
 import os
 import re
 import sys
+import paho.mqtt.client as mqtt
 
 from threading import Thread, Lock
 
 HOST = '127.0.0.1'
 PORT = 60003
+BROKER_PORT = 6000
 
 map_topics = {
     "1" : "/temperature/sensor",
@@ -24,8 +26,24 @@ def handle_line(line):
         topic = match.group('topic')
         string_topic = map_topics[str(topic)]
         metric = match.group('metric')
-        os.system('mosquitto_pub -h localhost -p 6000 -t {} -m {}'.format(string_topic, metric))
+        client.publish(string_topic, metric)
 
+def on_connect(client, userdata, flag, rc):
+    print("Connected with result code "+str(rc))
+
+    client.subscribe('$SYS/broker/clients/total')
+
+def on_message(client, userdata, message):
+    # Callback function when a message is received on the logging topic
+    print("Message received "+message.payload.decode("utf-8"))
+    socket = userdata['socket']
+    try:
+        if int(message.payload.decode("utf-8")) < 2:
+            socket.send("Stop nodes\n".encode())
+        else:
+            socket.send("Start nodes\n".encode())
+    except Exception as e:
+        print(e)
 def handle_cmd(s, cmd):
     if cmd == "periodical_data":
         s.send("periodical_data\n".encode())
@@ -48,8 +66,14 @@ def cli(socket):
             print("Caught an exception: {}".format(e))
 
 if __name__ == "__main__":
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.connect((HOST, PORT))
+        client = mqtt.Client("Gateway", userdata={'socket':s}, protocol=mqtt.MQTTv31)
+        client.on_connect = on_connect
+        client.on_message = on_message
+        client.connect("127.0.0.1", BROKER_PORT)
+        client.loop_start()
         t = Thread(target=cli, name="cli", args=(s,), daemon=True)
         t.start()
         line = ""
