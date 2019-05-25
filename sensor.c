@@ -6,6 +6,7 @@
 
 #include "dev/leds.h"
 
+
 #include "utils.h"
 #include "mmem.h"
 #include "linkaddr.h"
@@ -21,6 +22,8 @@ static data_buf_t *data_buf;
 
 /*---------------------------------------------------------------------------*/
 PROCESS(sensor_network, "sensor network");
+// PROCESS(check_timeout, "Check buffer timeout")
+// AUTOSTART_PROCESSES(&sensor_network, &check_timeout);
 AUTOSTART_PROCESSES(&sensor_network);
 /*---------------------------------------------------------------------------*/
 static void
@@ -41,6 +44,8 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     }
   }
   message_t *message = ((message_t *) packetbuf_dataptr());
+  uint16_t nbr_data_packets = packetbuf_datalen() / sizeof(data_t);
+  printf("DATA received, nbr packets = %d\n", (int) nbr_data_packets);
   switch((int) message->type) {
     case ADVERTISEMENT:
       break;
@@ -78,7 +83,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
       send_option_to_children(option, child_array);
       break;
     default:
-      printf("unicast_recv: Type not known \n");
+      printf("unicast_recv: Type not known %d\n", message->type);
   }
   //printf("runicast message received from %d.%d, seqno %d\n", from->u8[0], from->u8[1], seqno);
   //print_child_list();
@@ -135,7 +140,7 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
       }
       break;
     default:
-      printf("broadcast_recv: Type not known \n");
+      printf("broadcast_recv: Type not known, type: %d \n", (int) message->type);
   }
   //printf("broadcast message received from %d.%d: 'type = %d'\n", from->u8[0], from->u8[1], (int) message->type);
 }
@@ -179,6 +184,9 @@ PROCESS_THREAD(sensor_network, ev, data)
   broadcast_open(&broadcast, BROADCAST_CHANNEL, &broadcast_callbacks);
   runicast_open(&runicast, RUNICAST_CHANNEL, &runicast_callbacks);
   clock_init();
+  int prev_temp = -1;
+  int prev_hum = -1;
+
   while(1)
   {
     etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
@@ -190,7 +198,6 @@ PROCESS_THREAD(sensor_network, ev, data)
       advertisement_t adv;
       adv.type = ADVERTISEMENT;
       adv.id = (parent->id)+1;
-      packetbuf_clear();
       packetbuf_copyfrom(&adv, sizeof(advertisement_t));
       broadcast_send(&broadcast);
       //printf("Broadcast message sent: I can be your parent! \n");
@@ -199,20 +206,21 @@ PROCESS_THREAD(sensor_network, ev, data)
       switch (option) {
         case SEND_PERIODIC:
           ;
-          data_t data;
-          data.type = DATA;
-          data.sensor_addr = linkaddr_node_addr;
-          data.topic = TEMPERATURE;
-          data.metric = 42;
-          /*packetbuf_clear();
-          packetbuf_copyfrom(&data, sizeof(data_t));
-          runicast_send(&runicast, &parent->addr, MAX_RETRANSMISSIONS);
-          packetbuf_clear();*/
-          //printf("Send data \n");
-          add_packet_to_buf(data_buf, &data, &parent->addr);
+          send_data_hum(get_hum(), data_buf, &parent->addr);
+          send_data_temp(get_temp(), data_buf, &parent->addr);
           break;
         case SEND_IF_CHANGE:
-          // Handle change case
+          ;
+          int temp = get_temp();
+          int hum = get_hum();
+          if (prev_temp != temp) {
+            send_data_temp(temp, data_buf, &parent->addr);
+            prev_temp = temp;
+          }
+          if (prev_hum != hum) {
+            send_data_hum(hum, data_buf, &parent->addr);
+            prev_hum = hum;
+          }
           break;
       }
 
@@ -225,3 +233,9 @@ PROCESS_THREAD(sensor_network, ev, data)
 
   PROCESS_END();
 }
+
+// PROCESS_THREAD(check_timeout, ev, data)
+// {
+//   PROCESS_BEGIN();
+//
+// }

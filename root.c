@@ -14,6 +14,7 @@
 
 /*---------------------------------------------------------------------------*/
 static child_t **child_array = NULL;
+static uint8_t network_on = 2;
 /*---------------------------------------------------------------------------*/
 
 
@@ -31,7 +32,12 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     child->last_seen = clock_seconds();
   }
   else {
-    add_child_to_list(child_array, from);
+    if(network_on) {
+      add_child_to_list(child_array, from);
+    }
+    else {
+      send_broadcast_parent_dead(child_array); // node doesn't have a parent -> broadcast it
+    }
   }
   message_t *message = ((message_t *) packetbuf_dataptr());
   switch((int) message->type) {
@@ -46,7 +52,6 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
       printf("DATA received, nbr packets = %d\n", (int) nbr_data_packets);
       int i;
       for(i = 0; i < nbr_data_packets; i++) {
-        printf("data + i = %p\n", ((data_t *) message) + i);
         data_t *data_packet = ((data_t *) message) + i;
         printf("DATA: %d.%d, %d, %d\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1], data_packet->topic, data_packet->metric);
       }
@@ -111,18 +116,20 @@ PROCESS_THREAD(sensor_network, ev, data)
   serial_line_init();
   while(1)
   {
-    check_child_timeout(child_array);
-    etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
-    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
+    if (network_on) {
+      check_child_timeout(child_array);
+      etimer_set(&et, CLOCK_SECOND * BROADCAST_INTERVAL + random_rand() % (CLOCK_SECOND * BROADCAST_INTERVAL));
+      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
 
-    /* Advertises that it can be parent of other sensors */
-    advertisement_t adv;
-    adv.type = ADVERTISEMENT;
-    adv.id = 0;
-    packetbuf_clear();
-    packetbuf_copyfrom(&adv, sizeof(advertisement_t));
-    broadcast_send(&broadcast);
-    //printf("Broadcast message sent : I can be your parent !\n");
+      /* Advertises that it can be parent of other sensors */
+      advertisement_t adv;
+      adv.type = ADVERTISEMENT;
+      adv.id = 0;
+      packetbuf_clear();
+      packetbuf_copyfrom(&adv, sizeof(advertisement_t));
+      broadcast_send(&broadcast);
+      //printf("Broadcast message sent : I can be your parent !\n");
+    }
   }
 
   PROCESS_END();
@@ -143,6 +150,15 @@ PROCESS_THREAD(serial, ev, data)
       else if(strcmp((char *) data, "on_change_data") == 0) {
         printf("rcv option on change \n");
         send_option_to_children(SEND_IF_CHANGE, child_array);
+      }
+      else if(strcmp((char *) data, "start_nodes") == 0) {
+        printf("rcv option to start nodes\n");
+        network_on = 1;
+      }
+      else if(strcmp((char *) data, "stop_nodes") == 0) {
+        printf("%s\n","rcv option to stop nodes");
+        network_on = 0;
+        send_broadcast_parent_dead(child_array);
       }
       printf("received line: %s\n", (char *)data);
     }

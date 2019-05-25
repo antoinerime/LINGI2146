@@ -24,7 +24,7 @@ def handle_line(line):
     if(match == None): return
     else:
         topic = match.group('topic')
-        string_topic = map_topics[str(topic)]
+        string_topic = map_topics[str(topic)] + str(match.group('address'))
         metric = match.group('metric')
         client.publish(string_topic, metric)
 
@@ -39,9 +39,9 @@ def on_message(client, userdata, message):
     socket = userdata['socket']
     try:
         if int(message.payload.decode("utf-8")) < 2:
-            socket.send("Stop nodes\n".encode())
+            socket.send("stop_nodes\n".encode())
         else:
-            socket.send("Start nodes\n".encode())
+            socket.send("start_nodes\n".encode())
     except Exception as e:
         print(e)
 def handle_cmd(s, cmd):

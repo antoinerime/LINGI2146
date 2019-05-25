@@ -3,12 +3,16 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "contiki.h"
+
+#include "dev/sht11/sht11.h"
+
 
 #define UINT8_MAX_VALUE 255
 #define SIZE_ARRAY_CHILDREN 10
 #define BROADCAST_INTERVAL 4
 #define TIMEOUT_CHILD BROADCAST_INTERVAL*4
-#define TIMEOUT_BUFFER 20
+#define TIMEOUT_BUFFER 3
 #define SIZE_BUF 5
 
 #define MAX_RETRANSMISSIONS 4
@@ -89,6 +93,16 @@ typedef struct data_buf {
 
 
 /* Utils functions */
+
+static int get_temp() {
+  return (unsigned) (-39.60 + 0.01 * sht11_temp());
+}
+
+static int get_hum() {
+  int rh = sht11_humidity();
+  return (unsigned) (-4 + 0.405*rh + 2.8e-6*(rh*rh));
+}
+
 static void send_option_to_children(uint8_t option, child_t **child_array) {
   option_t option_packet;
   option_packet.type = OPTION;
@@ -149,49 +163,52 @@ static void add_packet_to_buf(data_buf_t *data_buf, data_t *data_packet, linkadd
   int i;
   for(i = 0; i < SIZE_BUF; i++) {
     if(data_buf->buf[i] == NULL) {
-      printf("buf[%d] filled\n", i);
-      data_buf->buf[i] = data_packet;
+      data_t* pkt = (data_t *) malloc(sizeof(data_t));
+      memcpy(pkt, data_packet, sizeof(data_t));
+      data_buf->buf[i] = pkt;
+      // data_t* pkt = (data_t *) data_buf->buf[i];
+      // printf("Add type: %d, data: %d, data_buf: %p, i: %d\n",pkt->type, pkt->metric, data_buf->buf[i], i);
       data_buf->timer = clock_seconds();
       break;
     }
   }
   if(i == SIZE_BUF-1) {
-    packetbuf_clear();
     char buf[SIZE_BUF * sizeof(data_t)];
     for(i = 0; i < SIZE_BUF; i++) {
       if(data_buf->buf[i] != NULL) {
         memcpy(buf + i * sizeof(data_t), data_buf->buf[i], sizeof(data_t));
+        free(data_buf->buf[i]);
+        data_buf->buf[i] = NULL;
       }
     }
     int size = packetbuf_copyfrom(buf, sizeof(data_t) * SIZE_BUF);
     printf("Send buffer because full: size = %d \n", size);
     runicast_send(&runicast, to, MAX_RETRANSMISSIONS);
-    for(i = 0; i < SIZE_BUF; i++) {
-      free(data_buf->buf[i]);
-      data_buf->buf[i] = NULL;
-    }
     data_buf->timer = clock_seconds();
   }
-  packetbuf_clear();
 }
 
-// TODO: Need to fix the aggregation of packets with timeout. Working with buffer full
 static void check_buffer_timeout(data_buf_t *data_buf, linkaddr_t *to) {
   unsigned long timer;
   timer = clock_seconds();
   if(timer - data_buf->timer > TIMEOUT_BUFFER) {
     int i;
-    packetbuf_clear();
+    char buf[SIZE_BUF * sizeof(data_t)];
+    // size_t size = 0;
     for(i = 0; i < SIZE_BUF; i++) {
       if(data_buf->buf[i] != NULL) {
-        packetbuf_copyfrom(data_buf->buf[i], sizeof(data_t));
+        memcpy(buf + i * sizeof(data_t), data_buf->buf[i], sizeof(data_t));
+        data_t* pkt = (data_t *) data_buf->buf[i];
+        free(data_buf->buf[i]);
+        data_buf->buf[i] = NULL;
       }
+      else
+        break;
     }
-    printf("Send buffer because timeout \n");
-    runicast_send(&runicast, to, MAX_RETRANSMISSIONS);
-    for(i = 0; i < SIZE_BUF; i++) {
-      free(data_buf->buf[i]);
-      data_buf->buf[i] = NULL;
+    if(i != 0) {
+      int size = packetbuf_copyfrom(buf, i * sizeof(data_t));
+      printf("Send buffer of size: %d because timeout \n", size);
+      runicast_send(&runicast, to, MAX_RETRANSMISSIONS);
     }
     data_buf->timer = clock_seconds();
   }
@@ -232,6 +249,26 @@ static void print_child_list(child_t **child_array) {
     }
   }
 }
+
+static void send_data_temp(int temperature, data_buf_t *data_buf, linkaddr_t *parent_addr) {
+  data_t data;
+  data.type = DATA;
+  data.sensor_addr = linkaddr_node_addr;
+  data.topic = TEMPERATURE;
+  data.metric = temperature;
+  add_packet_to_buf(data_buf, &data, parent_addr);
+
+}
+
+static void send_data_hum(int humidity, data_buf_t *data_buf, linkaddr_t *parent_addr) {
+  data_t data;
+  data.type = DATA;
+  data.sensor_addr = linkaddr_node_addr;
+  data.topic = HUMIDITY;
+  data.metric = humidity;
+  add_packet_to_buf(data_buf, &data, parent_addr);
+}
+
 
 
 #endif
