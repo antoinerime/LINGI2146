@@ -166,8 +166,6 @@ static void add_packet_to_buf(data_buf_t *data_buf, data_t *data_packet, linkadd
       data_t* pkt = (data_t *) malloc(sizeof(data_t));
       memcpy(pkt, data_packet, sizeof(data_t));
       data_buf->buf[i] = pkt;
-      // data_t* pkt = (data_t *) data_buf->buf[i];
-      // printf("Add type: %d, data: %d, data_buf: %p, i: %d\n",pkt->type, pkt->metric, data_buf->buf[i], i);
       data_buf->timer = clock_seconds();
       break;
     }
@@ -227,7 +225,7 @@ static child_t *in_list_of_children(child_t **child_array ,const linkaddr_t *add
 static void add_child_to_list(child_t **child_array, const linkaddr_t *addr) {
   if(in_list_of_children(child_array, addr) == NULL) {
     child_t *new_child = malloc(sizeof(child_t));
-    new_child->addr.u8[0] = addr->u8[0]; // TODO: use linkaddr_set
+    new_child->addr.u8[0] = addr->u8[0]; 
     new_child->addr.u8[1] = addr->u8[1];
     new_child->last_seen = clock_seconds();
     int i = 0;

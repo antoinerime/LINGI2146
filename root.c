@@ -44,7 +44,7 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
     case ADVERTISEMENT: // discard advertisement because I'm the root
       break;
     case REQUEST:
-      add_child_to_list(child_array, from); // In fact it is useless (if we use a channel for control plane then useful)
+      add_child_to_list(child_array, from); 
       break;
     case DATA:
       ;
@@ -55,13 +55,10 @@ recv_runicast(struct runicast_conn *c, const linkaddr_t *from, uint8_t seqno)
         data_t *data_packet = ((data_t *) message) + i;
         printf("DATA: %d.%d, %d, %d\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1], data_packet->topic, data_packet->metric);
       }
-      /*data_t *data_packet = (data_t *) message;
-      printf("DATA: %d.%d, %d, %d\n", data_packet->sensor_addr.u8[0], data_packet->sensor_addr.u8[1], data_packet->topic, data_packet->metric); // Sends data to gateway*/
       break;
     default:
       printf("unicast_recv: Type not known \n");
   }
-  //printf("runicast message received from %d.%d, seqno %d\n", from->u8[0], from->u8[1], seqno);
   print_child_list(child_array);
 }
 static void
@@ -88,7 +85,6 @@ broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from)
   if(child != NULL) {
     child->last_seen = clock_seconds();
   }
-  //printf("broadcast message received from %d.%d: '%s'\n", from->u8[0], from->u8[1], (char *)packetbuf_dataptr());
 }
 static const struct broadcast_callbacks broadcast_callbacks = {broadcast_recv};
 /*---------------------------------------------------------------------------*/
@@ -128,7 +124,6 @@ PROCESS_THREAD(sensor_network, ev, data)
       packetbuf_clear();
       packetbuf_copyfrom(&adv, sizeof(advertisement_t));
       broadcast_send(&broadcast);
-      //printf("Broadcast message sent : I can be your parent !\n");
     }
   }
 
