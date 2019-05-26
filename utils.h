@@ -12,7 +12,7 @@
 #define SIZE_ARRAY_CHILDREN 10
 #define BROADCAST_INTERVAL 4
 #define TIMEOUT_CHILD BROADCAST_INTERVAL*4
-#define TIMEOUT_BUFFER 3
+#define TIMEOUT_BUFFER 20
 #define SIZE_BUF 5
 
 #define MAX_RETRANSMISSIONS 4
@@ -225,7 +225,7 @@ static child_t *in_list_of_children(child_t **child_array ,const linkaddr_t *add
 static void add_child_to_list(child_t **child_array, const linkaddr_t *addr) {
   if(in_list_of_children(child_array, addr) == NULL) {
     child_t *new_child = malloc(sizeof(child_t));
-    new_child->addr.u8[0] = addr->u8[0]; 
+    new_child->addr.u8[0] = addr->u8[0];
     new_child->addr.u8[1] = addr->u8[1];
     new_child->last_seen = clock_seconds();
     int i = 0;
